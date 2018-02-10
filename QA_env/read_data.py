@@ -160,7 +160,9 @@ def read_data(config, data_type, ref, data_filter=None):
         data = json.load(fh)
     with open(shared_path, 'r') as fh:
         shared = json.load(fh)
-    print(list(shared.keys()))
+    
+    
+    print(len(shared['lower_word_counter']))
     num_examples = len(next(iter(data.values())))
     if data_filter is None:
         valid_idxs = range(num_examples)
@@ -179,6 +181,7 @@ def read_data(config, data_type, ref, data_filter=None):
     if not ref:
         word2vec_dict = shared['lower_word2vec'] if config.lower_word else shared['word2vec']
         word_counter = shared['lower_word_counter'] if config.lower_word else shared['word_counter']
+        print(len(word_counter))
         char_counter = shared['char_counter']
         if config.finetune:
             shared['word2idx'] = {word: idx + 2 for idx, word in
@@ -186,10 +189,14 @@ def read_data(config, data_type, ref, data_filter=None):
                                             if count > config.word_count_th or (config.known_if_glove and word in word2vec_dict))}
         else:
             assert config.known_if_glove
-            assert config.use_glove_for_unk
+            #assert config.use_glove_for_unk
+            
+            # exclude words that are not in Glove or infrequent
+            # orginal code has "not in word2vec_dict", which  I think is wrong
             shared['word2idx'] = {word: idx + 2 for idx, word in
                                   enumerate(word for word, count in word_counter.items()
-                                            if count > config.word_count_th and word not in word2vec_dict)}
+                                            if count > config.word_count_th and word in word2vec_dict)}
+        
         shared['char2idx'] = {char: idx + 2 for idx, char in
                               enumerate(char for char, count in char_counter.items()
                                         if count > config.char_count_th)}
@@ -199,6 +206,9 @@ def read_data(config, data_type, ref, data_filter=None):
         shared['word2idx'][UNK] = 1
         shared['char2idx'][NULL] = 0
         shared['char2idx'][UNK] = 1
+        
+        #print(shared['word2idx'])
+        #print(len(shared['word2idx']))
         json.dump({'word2idx': shared['word2idx'], 'char2idx': shared['char2idx']}, open(shared_path, 'w'))
     else:
         new_shared = json.load(open(shared_path, 'r'))
@@ -214,7 +224,7 @@ def read_data(config, data_type, ref, data_filter=None):
         word2vec_dict = shared['lower_word2vec'] if config.lower_word else shared['word2vec']
         new_word2idx_dict = shared['new_word2idx']
         idx2vec_dict = {idx: word2vec_dict[word] for word, idx in new_word2idx_dict.items()}
-        # print("{}/{} unique words have corresponding glove vectors.".format(len(idx2vec_dict), len(word2idx_dict)))
+        print("{}/{} unique words have corresponding glove vectors.".format(len(idx2vec_dict), len(word2idx_dict)))
         new_emb_mat = np.array([idx2vec_dict[idx] for idx in range(len(idx2vec_dict))], dtype='float32')
         shared['new_emb_mat'] = new_emb_mat
 
@@ -305,8 +315,11 @@ def update_config(config, data_sets):
 
     config.char_vocab_size = len(data_sets[0].shared['char2idx'])
     config.word_emb_size = len(next(iter(data_sets[0].shared['word2vec'].values())))
-    config.word_vocab_size = len(data_sets[0].shared['word2idx'])
-
+    
+    if config.use_glove_for_unk:
+        config.word_vocab_size = len(data_sets[0].shared['new_word2idx'])
+    else:
+        config.word_vocab_size = len(data_sets[0].shared['word2idx'])
     if config.single:
         config.max_num_sents = 1
     if config.squash:

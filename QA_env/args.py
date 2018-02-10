@@ -6,22 +6,22 @@ def parse_args():
 
     # Name and directories
     parser.add_argument('-model_name', type=str, default='basic')
-    parser.add_argument('-data_dir', type=str, default='/Users/RJ/data/squad/')
+    parser.add_argument('-data_dir', type=str, default='/home/rjh347/data/squad/')
     parser.add_argument('-run_id', type=int, default=0)
-    parser.add_argument('-out_dir', type=str, default='/Users/RJ/data/squad/')
+    parser.add_argument('-out_dir', type=str, default='/home/rjh347/data/squad/')
     parser.add_argument('-forward_name', type=str, default='single')
     parser.add_argument('-answer_path', type=str, default='')
     parser.add_argument('-eval_path', type=str, default='')
     parser.add_argument('-load_path', type=str, default='')
-    parser.add_argument('-shared_path', type=str, default='/Users/RJ/data/squad/')
+    parser.add_argument('-shared_path', type=str, default='/home/rjh347/data/squad/')
 
     # Device placement
     parser.add_argument('-use_gpu', type=bool, default=False)
-
+    parser.add_argument('-num_gpus', type=int, default=1)
 
     # Essential training and test options
     parser.add_argument('-mode', type=str, default="test")
-    parser.add_argument('-load', type=bool, default=False)
+    parser.add_argument('-load', type=bool, default=True)
     parser.add_argument('-single', type=bool, default=False)
     parser.add_argument('-debug', type=bool, default=False)
     parser.add_argument('-load_ema', type=bool, default=True)
@@ -46,6 +46,9 @@ def parse_args():
     parser.add_argument('-share_cnn_weights', type=bool, default=True)
     parser.add_argument('-share_lstm_weights', type=bool, default=True)
     parser.add_argument('-var_decay', type=float, default=0.999)
+
+    # Optimization
+    parser.add_argument('-cluster', type=bool, default=False)
 
     # Logging and saving options
     parser.add_argument('-progress', type=bool, default=True)
@@ -73,7 +76,7 @@ def parse_args():
     parser.add_argument('-squash', type=bool, default=False)
     parser.add_argument('-swap_memory', type=bool, default=True)
     parser.add_argument('-data_filter', type=str, default="max")
-    parser.add_argument('-use_glove_for_unk', type=bool, default=True)
+    parser.add_argument('-use_glove_for_unk', type=bool, default=False)
     parser.add_argument('-known_if_glove', type=bool, default=True)
     parser.add_argument('-logit_func', type=str, default="tri_linear")
     parser.add_argument('-answer_func', type=str, default="linear")
