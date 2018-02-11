@@ -34,11 +34,19 @@ class BiDAF(nn.Module):
         self.VC = config.char_vocab_size
         self.W = config.max_word_size
         
-        # if M > 1, input_size = M * JX * emb, to be fixed later 
-        self.HighwayMLP = HighwayMLP(config.word_emb_size, gate_bias=config.wd)
+        # if M > 1, input_size = M * JX * emb, to be fixed later
+        input_size = config.word_emb_size
+
+        if config.use_char_emb:
+            input_size += config.out_channel_dims
+
+        self.HighwayMLP = HighwayMLP(input_size, gate_bias=config.wd)
 
         # 2d character-CNN layer
         self.char_cnn = nn.Conv2d(config.char_emb_size, config.out_channel_dims, (1, config.filter_heights))
+        if not config.share_cnn_weights:
+            self.char_cnn_q = nn.Conv2d(config.char_emb_size, config.out_channel_dims, (1, config.filter_heights))
+
         # batch_size * max_num_sents * max_sent_size                                                                       
         self.x = Variable(torch.LongTensor(self.N, self.M, self.JX).zero_())
         self.cx = Variable(torch.LongTensor(self.N, self.M, self.JX, self.W).zero_())
@@ -47,8 +55,8 @@ class BiDAF(nn.Module):
         self.cq = Variable(torch.LongTensor(self.N, self.JQ, self.W).zero_())
         self.q_mask = Variable(torch.IntTensor(self.N, self.JQ).zero_())
         
-        #self.y = tf.placeholder('bool', [N, None, None], name='y')
-        #self.y2 = tf.placeholder('bool', [N, None, None], name='y2')
+        self.y = Variable(torch.IntTensor(self.N, self.M, self.JX))
+        self.y2 = Variable(torch.IntTensor(self.N, self.M, self.JX))
         #self.is_train = tf.placeholder('bool', [], name='is_train')
         #self.new_emb_mat = tf.placeholder('float', [None, config.word_emb_size], name='new_emb_mat')
 
@@ -63,6 +71,25 @@ class BiDAF(nn.Module):
             self.char_emb = nn.Embedding(config.char_vocab_size, config.char_emb_size, sparse=True)
             self.char_emb.weight.requires_grad = True
 
+        ## Context layers
+        ## hidden size / num_layers can be tunable, but the original paper doesn't use it
+        self.context = nn.LSTM(input_size,
+                               input_size,               # hidden size
+                               1,                        # num_context_layers,
+                               bias = False,
+                               batch_first = True,
+                               dropout = config.input_keep_prob,
+                               bidirectional = True)
+
+        if not config.share_lstm_weights:
+            self.context_q = nn.LSTM(input_size,
+                                     input_size,         # hidden size
+                                     1,                  # num_context_layers,                                              
+                                     bias = False,
+                                     batch_first = True,
+                                     dropout = config.input_keep_prob,
+                                     bidirectional = True)
+
     def forward(self, batches):
         
         #self.x = self.get_data_feed(batches)
@@ -74,36 +101,59 @@ class BiDAF(nn.Module):
 
             dc, dw, dco = self.config.char_emb_size, self.config.word_emb_size, self.config.char_out_size
             
-            # character embedding layer
-  
-            if self.config.use_char_emb:
-            
-                Acx = self.char_emb(self.cx.view(self.N, -1)).view(self.N, self.M, self.JX, self.W, -1)
-                Acq = self.char_emb(self.cq.view(self.N, -1)).view(self.N, self.JQ, -1)
-
-                # got rid of number of sentence
-            
-                Acx = Acx.squeeze(1)
-                # Add dropout layer here + fix dimensions
-                print(Acx.size())
-            
-                # character-cnn + maxpool
-                xx = self.char_cnn(Acx.permute(0, 3, 1, 2)).max(dim=3)[0].permute(0, 2, 1)
-                print(xx.size())
-
             # word embedding layer
             if self.config.use_word_emb:
             
-                Ax = self.emb(self.x.view(self.N, -1)).view(self.N, self.M, self.JX, -1)
+                # not sure how the author treat num sentence differently                                    
+                # since he consider the entire paragraph as a long sent                                                     
+                # needs to figure out since dim=1 - M is num_sent                                                            
+                Ax = self.emb(self.x.view(self.N, -1)).view(self.N, self.JX, -1)
                 Aq = self.emb(self.q)
 
-                # if M > 1, input_size = M * JX * emb, to be fixed later
-                if self.highway:
-                    Ax = self.highway(Ax, self.config.highway_num_layers) 
-                    Aq = self.highway(Aq, self.config.highway_num_layers)
+            # character embedding layer                                                                                      
+            if self.config.use_char_emb:
+
+                Acx = self.char_emb(self.cx.view(self.N, -1)).view(self.N, self.JX, self.W, -1)
+                Acq = self.char_emb(self.cq.view(self.N, -1)).view(self.N, self.JQ, self.W, -1)
+
+                # Add dropout layer here + fix dimensions                                                                     
+                # character-cnn + maxpool                                                                                     
+                xx = self.char_cnn(Acx.permute(0, 3, 1, 2)).max(dim=3)[0].permute(0, 2, 1)
+                
+                # not sure how the author treat num sentence differently
+                # since he consider the entire paragraph as a long sent
+                # needs to figure out since dim=1 - M is num_sent
+                #xx = xx.unsqueeze(1)
+
+                if self.config.share_cnn_weights:
+                    qq = self.char_cnn(Acq.permute(0, 3, 1, 2)).max(dim=3)[0].permute(0, 2, 1)
+                else:
+                    qq = self.char_cnn_q(Acq.permute(0, 3, 1, 2)).max(dim=3)[0].permute(0, 2, 1)
             
-            #print(Ax)
-            #print(Aq)
+                xx = torch.cat((Ax, xx), -1)
+                qq = torch.cat((Aq, qq), -1)
+
+            else:
+                xx = Ax
+                qq = Aq
+
+            if self.highway:
+                xx = self.highway(xx, self.config.highway_num_layers)
+                qq = self.highway(qq, self.config.highway_num_layers)
+
+            print('\nxx:', xx.size())
+            print('qq:', qq.size())
+
+            # context layer
+            h, _ = self.context(xx)
+            if self.config.share_lstm_weights:
+                u, _ = self.context(qq)
+            else:
+                u, _ = self.context_q(qq)
+
+            print("h:", h.size())
+            print("u:", u.size())
+
         return
 
     def highway(self, cur, num_layers):
@@ -114,11 +164,34 @@ class BiDAF(nn.Module):
         
         return cur
 
-    def get_data_feed(self, batch, config):
+    def get_data_feed(self, batch, config, supervised = True):
         # for each batch of raw data the model gets
         # convert it to PyTorch tensors that are ready for training
         X = batch.data['x']
         CX = batch.data['cx']
+
+
+        if supervised:
+            y = np.zeros([self.N, self.M, self.JX])
+            y2 = np.zeros([self.N, self.M, self.JX])
+            
+            for i, (xi, cxi, yi) in enumerate(zip(X, CX, batch.data['y'])):
+                start_idx, stop_idx = random.choice(yi)
+                j, k = start_idx
+                j2, k2 = stop_idx
+                if config.single:
+                    X[i] = [xi[j]]
+                    CX[i] = [cxi[j]]
+                    j, j2 = 0, 0
+                if config.squash:
+                    offset = sum(map(len, xi[:j]))
+                    j, k = 0, k + offset
+                    offset = sum(map(len, xi[:j2]))
+                    j2, k2 = 0, k2 + offset
+                y[i, j, k] = 1
+                y2[i, j2, k2-1] = 1
+                self.y = y
+                self.y2 = y2
 
         def _get_word(word):
             d = batch.shared['word2idx']
