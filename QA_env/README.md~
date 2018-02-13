@@ -1,0 +1,7 @@
+<<<<<<< HEAD
+1. Relicate BiDAF model in PyTorch.
+2. Train and test with SQuAD and SearchQA datasets
+=======
+1. Relicate BiDAF model in PyTorch. 
+2. Train and test with SQuAD and SearchQA datasets
+>>>>>>> 58f364e1a529d654c3a518acc1c5e17b303d96b6
