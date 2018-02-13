@@ -28,6 +28,7 @@ def main():
     dev_data = read_data(config, 'dev', True, data_filter=data_filter)
     
     update_config(config, [train_data, dev_data])
+    print(config.max_num_sents)
     _config_debug(config)
 
     print("Total vocabulary for training is %s" % config.word_vocab_size) 

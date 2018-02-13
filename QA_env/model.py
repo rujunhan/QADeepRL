@@ -90,6 +90,9 @@ class BiDAF(nn.Module):
                                      dropout = config.input_keep_prob,
                                      bidirectional = True)
 
+        ## Attention layer
+        self.att_layer = Attention(config)
+
     def forward(self, batches):
         
         #self.x = self.get_data_feed(batches)
@@ -151,9 +154,13 @@ class BiDAF(nn.Module):
             else:
                 u, _ = self.context_q(qq)
 
-            print("h:", h.size())
             print("u:", u.size())
 
+            h = h.unsqueeze(1)
+            print("h:", h.size())
+            # attention layer
+            p0 = self.att_layer(h, u, h_mask = self.x_mask, u_mask = self.q_mask)
+            print("p0:", p0.size())
         return
 
     def highway(self, cur, num_layers):

@@ -298,6 +298,9 @@ def update_config(config, data_sets):
             rx = data['*x'][idx]
             q = data['q'][idx]
             sents = shared['x'][rx[0]][rx[1]]
+
+            # sent length is set to 1 in the data processing
+            # check later if results are weird !!!
             config.max_para_size = max(config.max_para_size, sum(map(len, sents)))
             config.max_num_sents = max(config.max_num_sents, len(sents))
             config.max_sent_size = max(config.max_sent_size, max(map(len, sents)))
