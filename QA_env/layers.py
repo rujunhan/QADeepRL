@@ -35,7 +35,7 @@ class Attention(nn.Module):
         super(Attention, self).__init__()
 
         # input_size = 6d, output_size = 1
-        input_size = 6 * (config.char_out_size + config.hidden_size)
+        input_size = 6 * (config.hidden_size)
         self.alpha = nn.Linear(input_size, 1)
         self.dropout = nn.Dropout(p=(1-config.input_keep_prob))
         self.config = config
@@ -51,8 +51,8 @@ class Attention(nn.Module):
 
         if self.config.q2c_att or self.config.c2q_att:
             u_a, h_a = self.bi_attention(h, u, h_mask, u_mask)
-            print("u_a:", u_a.size())
-            print("h_a:", h_a.size())
+#            print("u_a:", u_a.size())
+#            print("h_a:", h_a.size())
         
         # only implement the simple beta function in the paper
         return torch.cat((h, u_a, h.mul(u_a), h.mul(h_a)), -1) 
@@ -68,24 +68,23 @@ class Attention(nn.Module):
         s = self.dropout(torch.cat((h_aug, u_aug, h_u), -1))
         
         s = self.alpha(s).squeeze(-1)
-        
+
         # compute context to query
-        u_a = self.softsel(u_aug, s)
-        h_a = self.softsel(h, s.max(dim=3)[0])
+        u_a = softsel(u_aug, s, 3)
+        h_a = softsel(h, s.max(dim=3)[0], 2)
         h_a = h_a.unsqueeze(2).repeat(1, 1, self.JX, 1)
         return u_a, h_a
     
-    def softsel(self, target, logits):
+def softsel(target, logits, dim=0):
 
-        """
-        :param target: [ ..., J, d] dtype=float
-        :param logits: [ ..., J], dtype=float
-        :return: [..., d], dtype=float
-        """
-    
-        a = F.softmax(logits, dim=-1)
-        target_rank = len(list(target.size()))
-        dim_to_reduce = target_rank - 2
-        out = target.mul(a.unsqueeze(-1)).sum(dim_to_reduce).squeeze(dim_to_reduce)
+    """
+    :param target: [ ..., J, d] dtype=float
+    :param logits: [ ..., J], dtype=float
+    :return: [..., d], dtype=float
+    """
+    a = F.softmax(logits, dim=dim)
+    target_rank = len(list(target.size()))
+    dim_to_reduce = target_rank - 2
+    out = target.mul(a.unsqueeze(-1)).sum(dim_to_reduce).squeeze(dim_to_reduce)
 
-        return out
+    return out

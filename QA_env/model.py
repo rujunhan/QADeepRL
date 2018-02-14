@@ -33,7 +33,9 @@ class BiDAF(nn.Module):
         self.VW = config.word_vocab_size
         self.VC = config.char_vocab_size
         self.W = config.max_word_size
-        
+        self.d = config.hidden_size
+
+
         # if M > 1, input_size = M * JX * emb, to be fixed later
         input_size = config.word_emb_size
 
@@ -60,6 +62,8 @@ class BiDAF(nn.Module):
         #self.is_train = tf.placeholder('bool', [], name='is_train')
         #self.new_emb_mat = tf.placeholder('float', [None, config.word_emb_size], name='new_emb_mat')
 
+        self.dropout = nn.Dropout(1 - config.input_keep_prob)
+
         ## Word embedding layer 
         if config.use_word_emb:
             self.emb = nn.Embedding(config.word_vocab_size, config.word_emb_size, sparse=True)
@@ -72,26 +76,56 @@ class BiDAF(nn.Module):
             self.char_emb.weight.requires_grad = True
 
         ## Context layers
-        ## hidden size / num_layers can be tunable, but the original paper doesn't use it
+        ## num_layers can be a tunable var, but the original paper fix it
         self.context = nn.LSTM(input_size,
-                               input_size,               # hidden size
+                               config.hidden_size,       
                                1,                        # num_context_layers,
                                bias = False,
                                batch_first = True,
-                               dropout = config.input_keep_prob,
+                               dropout = (1 - config.input_keep_prob),
                                bidirectional = True)
 
         if not config.share_lstm_weights:
             self.context_q = nn.LSTM(input_size,
-                                     input_size,         # hidden size
+                                     config.hidden_size,     
                                      1,                  # num_context_layers,                                              
                                      bias = False,
                                      batch_first = True,
-                                     dropout = config.input_keep_prob,
+                                     dropout = (1 - config.input_keep_prob),
                                      bidirectional = True)
 
         ## Attention layer
         self.att_layer = Attention(config)
+
+
+        ## Model layer
+        self.m1 = nn.LSTM(8 * config.hidden_size,
+                          config.hidden_size,
+                          2,                             # num_context_layers,                                                               
+                          bias = False,
+                          batch_first = True,
+                          dropout = (1 - config.input_keep_prob),
+                          bidirectional = True)
+
+        self.m2 = nn.LSTM(14 * config.hidden_size,
+                          config.hidden_size,
+                          2,                             # num_context_layers,                                                               
+                          bias = False,
+                          batch_first = True,
+                          dropout = (1 - config.input_keep_prob),
+                          bidirectional = True)
+
+        # reduce 10 * d features to 1 and take softmax over paragraph length (dim=2)
+        self.l1 = nn.Linear(10 * config.hidden_size, 1)
+        self.p1 = nn.Softmax(dim = 2)
+
+        self.l2 = nn.Linear(10 * config.hidden_size, 1)
+        self.p2 = nn.Softmax(dim = 2)
+
+
+        ## Loss function 
+        self.criterion = nn.CrossEntropyLoss()
+
 
     def forward(self, batches):
         
@@ -99,12 +133,12 @@ class BiDAF(nn.Module):
         #print(self.x)
         for i in batches:
             
-            # get data
+            ### Get data
             self.get_data_feed(i[1], self.config)
 
             dc, dw, dco = self.config.char_emb_size, self.config.word_emb_size, self.config.char_out_size
             
-            # word embedding layer
+            ### Word embedding layer
             if self.config.use_word_emb:
             
                 # not sure how the author treat num sentence differently                                    
@@ -113,7 +147,7 @@ class BiDAF(nn.Module):
                 Ax = self.emb(self.x.view(self.N, -1)).view(self.N, self.JX, -1)
                 Aq = self.emb(self.q)
 
-            # character embedding layer                                                                                      
+            ### Character embedding layer                                                                                      
             if self.config.use_char_emb:
 
                 Acx = self.char_emb(self.cx.view(self.N, -1)).view(self.N, self.JX, self.W, -1)
@@ -140,27 +174,58 @@ class BiDAF(nn.Module):
                 xx = Ax
                 qq = Aq
 
+            ### Highway layer
             if self.highway:
                 xx = self.highway(xx, self.config.highway_num_layers)
                 qq = self.highway(qq, self.config.highway_num_layers)
 
-            print('\nxx:', xx.size())
-            print('qq:', qq.size())
+            #print('\nxx:', xx.size())
+            #print('qq:', qq.size())
 
-            # context layer
+
+            ### Context layer
             h, _ = self.context(xx)
             if self.config.share_lstm_weights:
                 u, _ = self.context(qq)
             else:
                 u, _ = self.context_q(qq)
 
-            print("u:", u.size())
+            #print("u:", u.size())
 
             h = h.unsqueeze(1)
-            print("h:", h.size())
-            # attention layer
+            #print("h:", h.size())
+
+
+            ### Attention layer
             p0 = self.att_layer(h, u, h_mask = self.x_mask, u_mask = self.q_mask)
-            print("p0:", p0.size())
+            #print("p0:", p0.size())
+        
+            
+            ### Model layer
+            ##  Start p
+            g1, _ = self.m1(p0.squeeze(1))
+            g1 = g1.unsqueeze(1)
+            #print("g1:", g1.size())
+
+            # dropout --> linear
+            logits = self.l1(self.dropout(torch.cat((g1, p0), -1)))
+            self.yp = self.p1(logits).squeeze(-1)
+            #print("yp:", self.yp.size())
+
+            ## End p
+            ali = softsel(g1, logits.squeeze(-1), dim = 2)
+            ali = ali.unsqueeze(1).repeat(1, 1, self.JX, 1)
+            #print("ali:", ali.size())
+
+            g2, _  = self.m2(torch.cat((p0, g1, ali, g1.mul(ali)), 3).squeeze(1))
+            g2 = g2.unsqueeze(1)
+            #print("g2:", g2.size())
+            
+
+            logits2 = self.l2(self.dropout(torch.cat((g2, p0), -1)))
+            self.yp2 = self.p2(logits2).squeeze(-1)
+            #print("yp2:", self.yp2.size())
+            
         return
 
     def highway(self, cur, num_layers):
@@ -170,6 +235,24 @@ class BiDAF(nn.Module):
             cur = self.HighwayMLP(pre)
         
         return cur
+
+    def build_loss(self):
+
+        label1 = self.y.max(2)[1].squeeze(1)
+        label2 = self.y2.max(2)[1].squeeze(1)
+
+        #print(self.yp)
+        #print(self.yp2)
+        #print(label1, label2)
+
+        #print(self.yp.float().mul(self.y.float()).max(2)[0].log().neg())
+        #print(self.yp2.float().mul(self.y2.float()).max(2)[0].log().neg())
+
+        l1 = self.criterion(self.yp.view(-1, self.JX), label1)
+        l2 = self.criterion(self.yp2.view(-1, self.JX), label2)
+        return (l1 + l2).mean()
+        
+
 
     def get_data_feed(self, batch, config, supervised = True):
         # for each batch of raw data the model gets
@@ -183,7 +266,9 @@ class BiDAF(nn.Module):
             y2 = np.zeros([self.N, self.M, self.JX])
             
             for i, (xi, cxi, yi) in enumerate(zip(X, CX, batch.data['y'])):
+                
                 start_idx, stop_idx = random.choice(yi)
+                
                 j, k = start_idx
                 j2, k2 = stop_idx
                 if config.single:
@@ -197,8 +282,9 @@ class BiDAF(nn.Module):
                     j2, k2 = 0, k2 + offset
                 y[i, j, k] = 1
                 y2[i, j2, k2-1] = 1
-                self.y = y
-                self.y2 = y2
+                
+                self.y = Variable(torch.LongTensor(y))
+                self.y2 = Variable(torch.LongTensor(y2))
 
         def _get_word(word):
             d = batch.shared['word2idx']

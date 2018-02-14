@@ -43,8 +43,10 @@ def main():
 
     config.emb_mat = emb_mat
 
+
     ## Initialize model
     model = BiDAF(config)
+    optimizer = optim.Adagrad(filter(lambda p: p.requires_grad, model.parameters()), lr=0.5)
 
     ## Begin training
     num_steps = config.num_steps or int(math.ceil(train_data.num_examples / (config.batch_size * config.num_gpus))) * config.num_epochs
@@ -55,12 +57,15 @@ def main():
     count = 0
     for batches in tqdm(train_data.get_multi_batches(config.batch_size, config.num_gpus,
                                                      num_steps=num_steps, shuffle=True, cluster=config.cluster), total=num_steps):
-        if count > 0:
-            break
+        if count % 100 == 0:
+            print(loss)
         count += 1
         
         #print(batches[0][1].shared['char2idx'])
         model.forward(batches)
+        loss = model.build_loss()
+        loss.backward()
+        optimizer.step()
 
     return 
 
