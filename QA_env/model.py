@@ -48,19 +48,8 @@ class BiDAF(nn.Module):
         self.char_cnn = nn.Conv2d(config.char_emb_size, config.out_channel_dims, (1, config.filter_heights))
         if not config.share_cnn_weights:
             self.char_cnn_q = nn.Conv2d(config.char_emb_size, config.out_channel_dims, (1, config.filter_heights))
-
-        # batch_size * max_num_sents * max_sent_size                                                                       
-        self.x = Variable(torch.LongTensor(self.N, self.M, self.JX).zero_())
-        self.cx = Variable(torch.LongTensor(self.N, self.M, self.JX, self.W).zero_())
-        self.x_mask = Variable(torch.IntTensor(self.N, self.M, self.JX).zero_())
-        self.q = Variable(torch.LongTensor(self.N, self.JQ).zero_())
-        self.cq = Variable(torch.LongTensor(self.N, self.JQ, self.W).zero_())
-        self.q_mask = Variable(torch.IntTensor(self.N, self.JQ).zero_())
         
-        self.y = Variable(torch.IntTensor(self.N, self.M, self.JX))
-        self.y2 = Variable(torch.IntTensor(self.N, self.M, self.JX))
         #self.is_train = tf.placeholder('bool', [], name='is_train')
-        #self.new_emb_mat = tf.placeholder('float', [None, config.word_emb_size], name='new_emb_mat')
 
         self.dropout = nn.Dropout(1 - config.input_keep_prob)
 
@@ -130,7 +119,7 @@ class BiDAF(nn.Module):
     def forward(self, batches):
         
         #self.x = self.get_data_feed(batches)
-        #print(self.x)
+        #print(self.training)
         for i in batches:
             
             ### Get data
@@ -199,8 +188,7 @@ class BiDAF(nn.Module):
             ### Attention layer
             p0 = self.att_layer(h, u, h_mask = self.x_mask, u_mask = self.q_mask)
             #print("p0:", p0.size())
-        
-            
+                    
             ### Model layer
             ##  Start p
             g1, _ = self.m1(p0.squeeze(1))
@@ -208,12 +196,12 @@ class BiDAF(nn.Module):
             #print("g1:", g1.size())
 
             # dropout --> linear
-            logits = self.l1(self.dropout(torch.cat((g1, p0), -1)))
-            self.yp = self.p1(logits).squeeze(-1)
-            #print("yp:", self.yp.size())
+            self.logits = self.l1(self.dropout(torch.cat((g1, p0), -1)))
+            #self.yp = self.p1(logits).squeeze(-1)
+            #print("logits:", self.logits.size())
 
             ## End p
-            ali = softsel(g1, logits.squeeze(-1), dim = 2)
+            ali = softsel(g1, self.logits.squeeze(-1), dim = 2)
             ali = ali.unsqueeze(1).repeat(1, 1, self.JX, 1)
             #print("ali:", ali.size())
 
@@ -222,9 +210,9 @@ class BiDAF(nn.Module):
             #print("g2:", g2.size())
             
 
-            logits2 = self.l2(self.dropout(torch.cat((g2, p0), -1)))
-            self.yp2 = self.p2(logits2).squeeze(-1)
-            #print("yp2:", self.yp2.size())
+            self.logits2 = self.l2(self.dropout(torch.cat((g2, p0), -1)))
+            #self.yp2 = self.p2(logits2).squeeze(-1)
+            #print("logit2:", self.logits2.size())
             
         return
 
@@ -241,22 +229,46 @@ class BiDAF(nn.Module):
         label1 = self.y.max(2)[1].squeeze(1)
         label2 = self.y2.max(2)[1].squeeze(1)
 
-        #print(self.yp)
-        #print(self.yp2)
-        #print(label1, label2)
+        # print(self.yp)
+        # print(self.yp2)
+        #print(se, label2)
 
         #print(self.yp.float().mul(self.y.float()).max(2)[0].log().neg())
         #print(self.yp2.float().mul(self.y2.float()).max(2)[0].log().neg())
 
-        l1 = self.criterion(self.yp.view(-1, self.JX), label1)
-        l2 = self.criterion(self.yp2.view(-1, self.JX), label2)
-        return (l1 + l2).mean()
         
+        l1 = self.criterion(self.logits.view(-1, self.JX), label1)
+        l2 = self.criterion(self.logits2.view(-1, self.JX), label2)
+        #print('l1: ', l1)
+        #print('l2: ', l2)
+        return l1 + l2        
 
 
     def get_data_feed(self, batch, config, supervised = True):
         # for each batch of raw data the model gets
         # convert it to PyTorch tensors that are ready for training
+
+        if not self.training:
+            self.x = Variable(torch.LongTensor(self.N, self.M, self.JX).zero_(),volatile=True)
+            self.cx = Variable(torch.LongTensor(self.N, self.M, self.JX, self.W).zero_(),volatile=True)
+            self.x_mask = Variable(torch.IntTensor(self.N, self.M, self.JX).zero_(),volatile=True)
+            self.q = Variable(torch.LongTensor(self.N, self.JQ).zero_(),volatile=True)
+            self.cq = Variable(torch.LongTensor(self.N, self.JQ, self.W).zero_(),volatile=True)
+            self.q_mask = Variable(torch.IntTensor(self.N, self.JQ).zero_(),volatile=True)
+            self.y = Variable(torch.LongTensor(self.N, self.M, self.JX),volatile=True)
+            self.y2 = Variable(torch.LongTensor(self.N, self.M, self.JX),volatile=True)
+
+        else:
+            self.x = Variable(torch.LongTensor(self.N, self.M, self.JX).zero_())
+            self.cx = Variable(torch.LongTensor(self.N, self.M, self.JX, self.W).zero_())
+            self.x_mask = Variable(torch.IntTensor(self.N, self.M, self.JX).zero_())
+            self.q = Variable(torch.LongTensor(self.N, self.JQ).zero_())
+            self.cq = Variable(torch.LongTensor(self.N, self.JQ, self.W).zero_())
+            self.q_mask = Variable(torch.IntTensor(self.N, self.JQ).zero_())
+
+            self.y = Variable(torch.LongTensor(self.N, self.M, self.JX))
+            self.y2 = Variable(torch.LongTensor(self.N, self.M, self.JX))
+
         X = batch.data['x']
         CX = batch.data['cx']
 
@@ -282,9 +294,6 @@ class BiDAF(nn.Module):
                     j2, k2 = 0, k2 + offset
                 y[i, j, k] = 1
                 y2[i, j2, k2-1] = 1
-                
-                self.y = Variable(torch.LongTensor(y))
-                self.y2 = Variable(torch.LongTensor(y2))
 
         def _get_word(word):
             d = batch.shared['word2idx']
@@ -345,4 +354,15 @@ class BiDAF(nn.Module):
                     self.cq[i, j, k] = _get_char(cqijk)
                     if k + 1 == config.max_word_size:
                         break
+
+        if config.use_gpu:
+            self.y = self.y.cuda()
+            self.y2 = self.y2.cuda() 
+            self.x = self.x.cuda() 
+            self.x_mask = self.x_mask.cuda() 
+            self.cx = self.cx.cuda() 
+            self.q = self.q.cuda() 
+            self.q_mask = self.q_mask.cuda()
+            self.cq = self.cq.cuda() 
+
         return

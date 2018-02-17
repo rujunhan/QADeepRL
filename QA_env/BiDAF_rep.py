@@ -6,7 +6,6 @@ import math
 import os
 import shutil
 from pprint import pprint
-
 from read_data import read_data, get_squad_data_filter, update_config
 from args import parse_args
 from model import *
@@ -20,6 +19,24 @@ def _config_debug(config):
         config.val_num_batches = 2
         config.test_num_batches = 2
 
+
+def eval_model(model, dev_data, config):
+
+    model.eval()
+
+    loss = 0
+
+    num_steps = int(math.ceil(dev_data.num_examples / (config.batch_size * config.num_gpus)))
+
+#    print("eval steps: ", num_steps)
+    for batches in tqdm(dev_data.get_multi_batches(config.batch_size, config.num_gpus,
+                                                     num_steps=num_steps, shuffle=True, cluster=config.cluster), total=num_steps):
+        model(batches)
+        loss += model.build_loss()
+        
+    return loss.data.cpu().numpy()[0] / num_steps
+
+
 def main():
     
     config = parse_args()
@@ -28,7 +45,6 @@ def main():
     dev_data = read_data(config, 'dev', True, data_filter=data_filter)
     
     update_config(config, [train_data, dev_data])
-    print(config.max_num_sents)
     _config_debug(config)
 
     print("Total vocabulary for training is %s" % config.word_vocab_size) 
@@ -43,9 +59,12 @@ def main():
 
     config.emb_mat = emb_mat
 
-
     ## Initialize model
     model = BiDAF(config)
+
+    if config.use_gpu:
+        model.cuda()
+
     optimizer = optim.Adagrad(filter(lambda p: p.requires_grad, model.parameters()), lr=0.5)
 
     ## Begin training
@@ -54,19 +73,27 @@ def main():
 
     print(num_steps)
     
-    count = 0
+    count = 1
+    train_loss = []
     for batches in tqdm(train_data.get_multi_batches(config.batch_size, config.num_gpus,
                                                      num_steps=num_steps, shuffle=True, cluster=config.cluster), total=num_steps):
-        if count % 100 == 0:
-            print(loss)
-        count += 1
+            
+        model.train()
+        model.zero_grad()
         
-        #print(batches[0][1].shared['char2idx'])
-        model.forward(batches)
+        model(batches)
         loss = model.build_loss()
+
         loss.backward()
         optimizer.step()
 
+        if count % 100 == 0:
+            eval_loss = eval_model(model, dev_data, config)
+            print("train loss is: %.3f" % loss.data.cpu().numpy()[0])
+            print("eval loss is: %.3f \n" % eval_loss)
+            model.train()
+
+        count += 1
     return 
 
 

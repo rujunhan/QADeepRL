@@ -16,7 +16,7 @@ def parse_args():
     parser.add_argument('-shared_path', type=str, default='/home/rjh347/data/squad/')
 
     # Device placement
-    parser.add_argument('-use_gpu', type=bool, default=False)
+    parser.add_argument('-use_gpu', type=bool, default=True)
     parser.add_argument('-num_gpus', type=int, default=1)
 
     # Essential training and test options
@@ -28,7 +28,7 @@ def parse_args():
     parser.add_argument('-eval', type=bool, default=True)
 
     # Traning / test parameters
-    parser.add_argument('-batch_size', type=int, default=2)
+    parser.add_argument('-batch_size', type=int, default=50)
     parser.add_argument('-num_epochs', type=int, default=12)
     parser.add_argument('-num_steps', type=int, default=20000)
     parser.add_argument('-init_lr', type=float, default=0.5)

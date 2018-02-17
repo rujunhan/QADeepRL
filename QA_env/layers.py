@@ -59,20 +59,25 @@ class Attention(nn.Module):
 
     def bi_attention(self, h, u, h_mask=None, u_mask=None):
         
-        h_aug = h.unsqueeze(3).repeat(1, 1, 1, self.JQ, 1)
-        u_aug = u.unsqueeze(1).unsqueeze(1).repeat(1, self.M, self.JX, 1, 1)
+        h_aug = h.unsqueeze(3).expand(-1, -1, -1, self.JQ, -1)
+        u_aug = u.unsqueeze(1).unsqueeze(1).expand(-1, self.M, self.JX, -1, -1)
+
+        #h_u = h.unsqueeze(3).expand(-1, -1, -1, self.JQ, -1).mul(u.unsqueeze(1).unsqueeze(1).expand(-1, self.M, self.JX, -1, -1))
 
         h_u = h_aug.mul(u_aug)
 
         # similariy matrix S
+        #s = self.dropout(torch.cat((h.unsqueeze(3).expand(-1, -1, -1, self.JQ, -1), u.unsqueeze(1).unsqueeze(1).expand(-1, self.M, self.JX, -1, -1), h_u), -1))
         s = self.dropout(torch.cat((h_aug, u_aug, h_u), -1))
-        
-        s = self.alpha(s).squeeze(-1)
+#        print("s: ", s.size())
+        s = self.alpha(s)#self.dropout(torch.cat((h.unsqueeze(3).expand(-1, -1, -1, self.JQ, -1), u.unsqueeze(1).unsqueeze(1).expand(-1, self.M, self.JX, -1, -1), h_u), -1)))
+        s = s.squeeze(-1)
 
         # compute context to query
         u_a = softsel(u_aug, s, 3)
+        #u_a = softsel(u.unsqueeze(1).unsqueeze(1).expand(-1, self.M, self.JX, -1, -1), s, 3)
         h_a = softsel(h, s.max(dim=3)[0], 2)
-        h_a = h_a.unsqueeze(2).repeat(1, 1, self.JX, 1)
+        h_a = h_a.unsqueeze(2).expand(-1, -1, self.JX, -1)
         return u_a, h_a
     
 def softsel(target, logits, dim=0):
