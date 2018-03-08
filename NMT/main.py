@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 import argparse
 import random
 from args import parse_args
-#from BBP import ConditinalBBP
 from datastream import load_data
 #from utils import *
 
@@ -22,7 +21,6 @@ def main():
 
     args = parse_args()
     batch = load_data(args)    
-
 
     count = 0
     for item in batch:

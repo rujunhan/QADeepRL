@@ -38,14 +38,15 @@ class load_data():
     def __iter__(self):
         return(self)
 
-
     def __next__(self):
 
         data = []
         count = 0
 
         while True:
-            line = json.loads(line)
+            line = self.source.readline().strip().split(',')
+            source = line[0]
+            target = line[1]
 
             if line == '':
                 print("end of file!")
@@ -53,7 +54,6 @@ class load_data():
                 break
 
             self.count += 1
-            #line = line.strip().split(' ')
 
             #label 
             #if len(line) < 2:

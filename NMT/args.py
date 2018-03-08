@@ -23,10 +23,10 @@ def parse_args():
     parser.add_argument('-load_model', type=bool, default=False)
     args = parser.parse_args()
 
-    args.vocab = ""
+    args.vocab = "NMT_vocab.txt"
     args.saveto = "../results/"
     args.source = "/scratch/rjh347/data/"
-    args.data_file = 'en_zh.json'
+    args.data_file = 'en_zh.txt'
     args.file_stamp = 'NMT'
     args.save_stamp = 'NMT_save'
 
