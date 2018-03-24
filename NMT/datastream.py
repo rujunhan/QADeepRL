@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.autograd as autograd
 import torch.nn as nn
@@ -17,9 +18,10 @@ class load_data():
         self.batch_size = args.batch_size
         self.max_sent_len = args.max_sent_len
 
-        #self.vocab = np.load(args.source+args.vocab).item()                                                                                     
-        fname = args.source+args.data_file
+        #self.vocab = np.load(args.source+args.vocab).item()
 
+        fname = args.source+args.data_file
+    
         self.source = open(fname, 'r')
 
         self.end_of_data = False
@@ -37,7 +39,7 @@ class load_data():
     def __next__(self):
 
         count = 0
-
+        
         batch_s = []
         batch_t = []
 
@@ -54,9 +56,10 @@ class load_data():
             self.count += 1
 
             count += 1
-                       batch_s.append(source)
-            batch_t.append(target)
 
+            batch_s.append(source)
+            batch_t.append(target)
+            
             if count >= self.batch_size:
                 break
 
@@ -69,7 +72,7 @@ class load_data():
     def mask_sent(self, raw_batch):
 
         max_sent_len = max([len(x) for x in raw_batch])
-
+        
         batch = []
         for sent in raw_batch:
 

@@ -10,10 +10,10 @@ def main():
 
 
     # load vocabulary
-    word2idx = {}
-    idx2word = {}
+    word2idx = {'<null>': 0}
+    idx2word = {0: '<null>'}
 
-    idx = 0  
+    idx = 1
     with open(args.source+args.vocab) as vocab:
         for v in vocab:
             v = v.strip().split('\t')[0]
@@ -31,7 +31,6 @@ def main():
 
     np.save(args.source+'w2i.npy', word2idx)
     np.save(args.source+'i2w.npy', idx2word)
-
     
     # create language pair
     save_data = []

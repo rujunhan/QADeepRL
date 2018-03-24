@@ -25,9 +25,9 @@ def main():
     count = 0
     for item in batch:
         print(item)
-        if count > 0:
-            break
         count += 1
+        if count > 10:
+            break
 
 
 if __name__ == '__main__':

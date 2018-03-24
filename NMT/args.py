@@ -6,7 +6,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-emb', type=int, default=50)
-    parser.add_argument('-batch_size', type=int, default=1)
+    parser.add_argument('-batch_size', type=int, default=10)
     parser.add_argument('-n_epochs', type=int, default=1)
     parser.add_argument('-seed', type=int, default=123)
     parser.add_argument('-lr', type=float, default =0.05)
@@ -14,7 +14,7 @@ def parse_args():
     parser.add_argument('-source', type=str)
     parser.add_argument('-saveto', type=str)
     parser.add_argument('-data_file', type=str)
-    
+    parser.add_argument('-max_sent_len', type=int, default=100)
     parser.add_argument('-file_stamp', type=str)
     parser.add_argument('-cuda', type=bool, default=False)
     parser.add_argument('-save_stamp', type=str)
