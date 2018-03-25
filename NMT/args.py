@@ -19,7 +19,7 @@ def parse_args():
     parser.add_argument('-cuda', type=bool, default=False)
     parser.add_argument('-save_stamp', type=str)
     parser.add_argument('-best_model', type=str, default='model_best.pth.tar')
-    
+    parser.add_argument('-fout_list', type=list, default=[])
     parser.add_argument('-load_model', type=bool, default=False)
     args = parser.parse_args()
 
@@ -29,6 +29,7 @@ def parse_args():
     args.data_file = 'en_zh.txt'
     args.file_stamp = 'NMT'
     args.save_stamp = 'NMT_save'
+    args.fout_list = ['files1', 'files2', 'files3', 'files4', 'files5']
 
     args.cuda = False
     args.best_model = 'model_best_%s.pth.tar' % (args.save_stamp)
