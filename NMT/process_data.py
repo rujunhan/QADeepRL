@@ -1,8 +1,9 @@
 from args import parse_args
 import numpy as np
+import random
 
 ALL_LANG = ['ar', 'en', 'es', 'fr', 'ru', 'zh']
-LANG_PAIR_LIST = [['en', 'zh']]
+LANG_PAIR_LIST = [['en', 'zh'], ['zh', 'en']]
 
 def main():
 
@@ -10,10 +11,10 @@ def main():
 
 
     # load vocabulary
-    word2idx = {'<null>': 0}
-    idx2word = {0: '<null>'}
+    word2idx = {}
+    idx2word = {}
 
-    idx = 1
+    idx = 0
     with open(args.source+args.vocab) as vocab:
         for v in vocab:
             v = v.strip().split('\t')[0]
@@ -34,37 +35,42 @@ def main():
     
     # create language pair
     save_data = []
-
-    idx = 0
-    for pair in LANG_PAIR_LIST:
-
-        with open(args.source+pair[0]+'.txt', 'r') as source:
-            for line in source:
-                temp = str(word2idx['<2%s>' % pair[1]])
-                temp = temp + ' ' + line.strip()
-                save_data.append([temp])
-        source.close()
-        print("Done collecting source!")
-
-        with open(args.source+pair[1]+'.txt', 'r') as target:
-            for line in target:
-                line = line.strip()
-                save_data[idx].append(line)
-                idx += 1
-        target.close()
-        print("Done collecting target!")
-
-    # json file is inconvenient for streaming
-    # so convert json to csv file instead
     
-    save_file = args.source + 'en_zh.txt'
+    save_file = args.source + 'files.txt'
     with open(save_file, 'w') as fout:
-        for d in save_data:
-            fout.write(','.join(d))
-            fout.write('\n')
+        save_data = []
+
+        idx = 0
+        for pair in LANG_PAIR_LIST:
+
+            with open(args.source+pair[0]+'.txt', 'r') as source:
+                for line in source:
+                    temp = str(word2idx['<2%s>' % pair[1]])
+                    temp = temp + ' ' + line.strip()
+                    save_data.append([temp])
+            source.close()
+            print("Done collecting source %s" % pair[0])
+
+            with open(args.source+pair[1]+'.txt', 'r') as target:
+                for line in target:
+                    line = line.strip()
+                    save_data[idx].append(line)
+                    idx += 1
+            target.close()
+            print("Done collecting target %s" % pair[1])
     
+            for d in save_data:
+                fout.write(','.join(d))
+                fout.write('\n')
+            save_data = []
+            idx = 0
+
     fout.close()
+
+    lines = open(args.source+"files.txt").readlines()
+    random.shuffle(lines)
+    open(args.source+"files_s.txt", 'w').writelines(lines)
+    print("Done shuffling!")
          
 if __name__ == '__main__':
     main()
-
