@@ -23,9 +23,6 @@ class BiDAF(nn.Module):
 
         self.config = config
 
-        ## need to figure this out later
-        self.global_step = 0
-        
         self.N = config.batch_size
         self.M = config.max_num_sents
         self.JX = config.max_sent_size
@@ -34,7 +31,6 @@ class BiDAF(nn.Module):
         self.VC = config.char_vocab_size
         self.W = config.max_word_size
         self.d = config.hidden_size
-
 
         # if M > 1, input_size = M * JX * emb, to be fixed later
         input_size = config.word_emb_size
@@ -47,21 +43,31 @@ class BiDAF(nn.Module):
         # 2d character-CNN layer
         self.char_cnn = nn.Conv2d(config.char_emb_size, config.out_channel_dims, (1, config.filter_heights))
         if not config.share_cnn_weights:
-            self.char_cnn_q = nn.Conv2d(config.char_emb_size, config.out_channel_dims, (1, config.filter_heights))
-        
+            self.char_cnn_q = nn.Conv2d(config.char_emb_size, config.out_channel_dims, (1, config.filter_heights))        
         #self.is_train = tf.placeholder('bool', [], name='is_train')
 
         self.dropout = nn.Dropout(1 - config.input_keep_prob)
 
         ## Word embedding layer 
         if config.use_word_emb:
-            self.emb = nn.Embedding(config.word_vocab_size, config.word_emb_size, sparse=True)
-            self.emb.weight = Parameter(torch.FloatTensor(config.emb_mat))
+
+            if config.use_glove_for_unk:
+                word_emb_mat = np.vstack((config.emb_mat, config.new_emb_mat))
+                vocab_size = config.word_vocab_size + config.new_emb_mat.shape[0]
+            else:
+                word_emb_mat = config.emb_mat
+                vocab_size = config.word_vocab_size
+
+            print(word_emb_mat.shape)
+            print(vocab_size)
+
+            self.emb = nn.Embedding(vocab_size, config.word_emb_size, sparse=True)
+            self.emb.weight = Parameter(torch.FloatTensor(word_emb_mat))
             self.emb.weight.requires_grad = config.finetune
 
         ## Character embedding layer
         if config.use_char_emb:
-            self.char_emb = nn.Embedding(config.char_vocab_size, config.char_emb_size, sparse=True)
+            self.char_emb = nn.Embedding(config.char_vocab_size, config.char_emb_size, sparse=False)
             self.char_emb.weight.requires_grad = True
 
         ## Context layers
@@ -98,7 +104,7 @@ class BiDAF(nn.Module):
 
         self.m2 = nn.LSTM(14 * config.hidden_size,
                           config.hidden_size,
-                          2,                             # num_context_layers,                                                               
+                          2,                             # num_context_layers,                                                    
                           bias = False,
                           batch_first = True,
                           dropout = (1 - config.input_keep_prob),
@@ -111,7 +117,6 @@ class BiDAF(nn.Module):
         self.l2 = nn.Linear(10 * config.hidden_size, 1)
         self.p2 = nn.Softmax(dim = 2)
 
-
         ## Loss function 
         self.criterion = nn.CrossEntropyLoss()
 
@@ -121,10 +126,9 @@ class BiDAF(nn.Module):
         #self.x = self.get_data_feed(batches)
         #print(self.training)
         for i in batches:
-            
             ### Get data
             self.get_data_feed(i[1], self.config)
-
+    
             dc, dw, dco = self.config.char_emb_size, self.config.word_emb_size, self.config.char_out_size
             
             ### Word embedding layer
@@ -171,7 +175,6 @@ class BiDAF(nn.Module):
             #print('\nxx:', xx.size())
             #print('qq:', qq.size())
 
-
             ### Context layer
             h, _ = self.context(xx)
             if self.config.share_lstm_weights:
@@ -183,7 +186,6 @@ class BiDAF(nn.Module):
 
             h = h.unsqueeze(1)
             #print("h:", h.size())
-
 
             ### Attention layer
             p0 = self.att_layer(h, u, h_mask = self.x_mask, u_mask = self.q_mask)
@@ -197,7 +199,7 @@ class BiDAF(nn.Module):
 
             # dropout --> linear
             self.logits = self.l1(self.dropout(torch.cat((g1, p0), -1)))
-            #self.yp = self.p1(logits).squeeze(-1)
+            self.yp = self.p1(self.logits).squeeze(-1)
             #print("logits:", self.logits.size())
 
             ## End p
@@ -209,9 +211,8 @@ class BiDAF(nn.Module):
             g2 = g2.unsqueeze(1)
             #print("g2:", g2.size())
             
-
             self.logits2 = self.l2(self.dropout(torch.cat((g2, p0), -1)))
-            #self.yp2 = self.p2(logits2).squeeze(-1)
+            self.yp2 = self.p2(self.logits2).squeeze(-1)
             #print("logit2:", self.logits2.size())
             
         return
@@ -236,7 +237,6 @@ class BiDAF(nn.Module):
         #print(self.yp.float().mul(self.y.float()).max(2)[0].log().neg())
         #print(self.yp2.float().mul(self.y2.float()).max(2)[0].log().neg())
 
-        
         l1 = self.criterion(self.logits.view(-1, self.JX), label1)
         l2 = self.criterion(self.logits2.view(-1, self.JX), label2)
         #print('l1: ', l1)
@@ -248,35 +248,41 @@ class BiDAF(nn.Module):
         # for each batch of raw data the model gets
         # convert it to PyTorch tensors that are ready for training
 
-        if not self.training:
-            self.x = Variable(torch.LongTensor(self.N, self.M, self.JX).zero_(),volatile=True)
-            self.cx = Variable(torch.LongTensor(self.N, self.M, self.JX, self.W).zero_(),volatile=True)
-            self.x_mask = Variable(torch.IntTensor(self.N, self.M, self.JX).zero_(),volatile=True)
-            self.q = Variable(torch.LongTensor(self.N, self.JQ).zero_(),volatile=True)
-            self.cq = Variable(torch.LongTensor(self.N, self.JQ, self.W).zero_(),volatile=True)
-            self.q_mask = Variable(torch.IntTensor(self.N, self.JQ).zero_(),volatile=True)
-            self.y = Variable(torch.LongTensor(self.N, self.M, self.JX),volatile=True)
-            self.y2 = Variable(torch.LongTensor(self.N, self.M, self.JX),volatile=True)
+        if config.len_opt:
+            if sum(len(sent) for para in batch.data['x'] for sent in para) == 0:
+                new_JX = 1
+            else:
+                new_JX = max(len(sent) for para in batch.data['x'] for sent in para)
+            self.JX = min(config.max_sent_size, new_JX)
 
-        else:
-            self.x = Variable(torch.LongTensor(self.N, self.M, self.JX).zero_())
-            self.cx = Variable(torch.LongTensor(self.N, self.M, self.JX, self.W).zero_())
-            self.x_mask = Variable(torch.IntTensor(self.N, self.M, self.JX).zero_())
-            self.q = Variable(torch.LongTensor(self.N, self.JQ).zero_())
-            self.cq = Variable(torch.LongTensor(self.N, self.JQ, self.W).zero_())
-            self.q_mask = Variable(torch.IntTensor(self.N, self.JQ).zero_())
+            if sum(len(ques) for ques in batch.data['q']) == 0:
+                new_JQ = 1
+            else:
+                new_JQ = max(len(ques) for ques in batch.data['q'])
+            self.JQ = min(config.max_ques_size, new_JQ)
 
-            self.y = Variable(torch.LongTensor(self.N, self.M, self.JX))
-            self.y2 = Variable(torch.LongTensor(self.N, self.M, self.JX))
+        if config.cpu_opt:
+            if sum(len(para) for para in batch.data['x']) == 0:
+                new_M = 1
+            else:
+                new_M = max(len(para) for para in batch.data['x'])
+            self.M = min(config.max_num_sents, new_M)
+
+        
+        self.x = Variable(torch.LongTensor(self.N, self.M, self.JX).zero_())
+        self.cx = Variable(torch.LongTensor(self.N, self.M, self.JX, self.W).zero_())
+        self.x_mask = Variable(torch.IntTensor(self.N, self.M, self.JX).zero_())
+        self.q = Variable(torch.LongTensor(self.N, self.JQ).zero_())
+        self.cq = Variable(torch.LongTensor(self.N, self.JQ, self.W).zero_())
+        self.q_mask = Variable(torch.IntTensor(self.N, self.JQ).zero_())
+        self.y = Variable(torch.LongTensor(self.N, self.M, self.JX).zero_())
+        self.y2 = Variable(torch.LongTensor(self.N, self.M, self.JX).zero_())
 
         X = batch.data['x']
         CX = batch.data['cx']
 
-
         if supervised:
-            y = np.zeros([self.N, self.M, self.JX])
-            y2 = np.zeros([self.N, self.M, self.JX])
-            
+                    
             for i, (xi, cxi, yi) in enumerate(zip(X, CX, batch.data['y'])):
                 
                 start_idx, stop_idx = random.choice(yi)
@@ -292,8 +298,8 @@ class BiDAF(nn.Module):
                     j, k = 0, k + offset
                     offset = sum(map(len, xi[:j2]))
                     j2, k2 = 0, k2 + offset
-                y[i, j, k] = 1
-                y2[i, j2, k2-1] = 1
+                self.y[i, j, k] = 1
+                self.y2[i, j2, k2-1] = 1
 
         def _get_word(word):
             d = batch.shared['word2idx']
@@ -301,11 +307,11 @@ class BiDAF(nn.Module):
                 if each in d:     
                     return d[each]
 
-            #if config.use_glove_for_unk:
-            #    d2 = batch.shared['new_word2idx']
-            #    for each in (word, word.lower(), word.capitalize(), word.upper()):
-            #        if each in d2:
-            #            return d2[each] + len(d)
+            if config.use_glove_for_unk:
+                d2 = batch.shared['new_word2idx']
+                for each in (word, word.lower(), word.capitalize(), word.upper()):
+                    if each in d2:
+                        return d2[each] + len(d)
             return 1
 
         def _get_char(char):

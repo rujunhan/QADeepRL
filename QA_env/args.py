@@ -4,34 +4,36 @@ def parse_args():
 
     parser = argparse.ArgumentParser()
 
+    parser.add_argument('-test_run', type=bool, default=False)
+
     # Name and directories
     parser.add_argument('-model_name', type=str, default='basic')
-    parser.add_argument('-data_dir', type=str, default='/home/rjh347/data/squad/')
+    parser.add_argument('-data_dir', type=str, default='/scratch/rjh347/data/squad/')
     parser.add_argument('-run_id', type=int, default=0)
-    parser.add_argument('-out_dir', type=str, default='/home/rjh347/data/squad/')
+    parser.add_argument('-out_dir', type=str, default='/scratch/rjh347/data/squad/')
     parser.add_argument('-forward_name', type=str, default='single')
     parser.add_argument('-answer_path', type=str, default='')
     parser.add_argument('-eval_path', type=str, default='')
     parser.add_argument('-load_path', type=str, default='')
-    parser.add_argument('-shared_path', type=str, default='/home/rjh347/data/squad/')
+    parser.add_argument('-shared_path', type=str, default='/scratch/rjh347/data/squad/')
 
     # Device placement
     parser.add_argument('-use_gpu', type=bool, default=True)
     parser.add_argument('-num_gpus', type=int, default=1)
 
     # Essential training and test options
-    parser.add_argument('-mode', type=str, default="test")
-    parser.add_argument('-load', type=bool, default=True)
+    parser.add_argument('-mode', type=str, default="train")
+    parser.add_argument('-load', type=bool, default=False)
     parser.add_argument('-single', type=bool, default=False)
     parser.add_argument('-debug', type=bool, default=False)
     parser.add_argument('-load_ema', type=bool, default=True)
     parser.add_argument('-eval', type=bool, default=True)
 
     # Traning / test parameters
-    parser.add_argument('-batch_size', type=int, default=50)
+    parser.add_argument('-batch_size', type=int, default=60)
     parser.add_argument('-num_epochs', type=int, default=12)
     parser.add_argument('-num_steps', type=int, default=20000)
-    parser.add_argument('-init_lr', type=float, default=0.5)
+    parser.add_argument('-init_lr', type=float, default=0.001)
     parser.add_argument('-input_keep_prob', type=float, default=0.8)
     parser.add_argument('-keep_prob', type=float, default=0.8)
     parser.add_argument('-wd', type=float, default=0.0)
@@ -49,7 +51,9 @@ def parse_args():
 
     # Optimization
     parser.add_argument('-cluster', type=bool, default=False)
-
+    parser.add_argument('-len_opt', type=bool, default=True)
+    parser.add_argument('-cpu_opt', type=bool, default=True)
+    
     # Logging and saving options
     parser.add_argument('-progress', type=bool, default=True)
     parser.add_argument('-log_period', type=int, default=100)
@@ -76,7 +80,7 @@ def parse_args():
     parser.add_argument('-squash', type=bool, default=False)
     parser.add_argument('-swap_memory', type=bool, default=True)
     parser.add_argument('-data_filter', type=str, default="max")
-    parser.add_argument('-use_glove_for_unk', type=bool, default=False)
+    parser.add_argument('-use_glove_for_unk', type=bool, default=True)
     parser.add_argument('-known_if_glove', type=bool, default=True)
     parser.add_argument('-logit_func', type=str, default="tri_linear")
     parser.add_argument('-answer_func', type=str, default="linear")

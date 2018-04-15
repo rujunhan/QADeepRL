@@ -53,7 +53,9 @@ class DataSet(object):
     def get_data_size(self):
         if isinstance(self.data, dict):
             return len(next(iter(self.data.values())))
+
         elif isinstance(self.data, Data):
+            print("data size is: %s" % self.data.get_size())
             return self.data.get_size()
         raise Exception()
 
@@ -76,6 +78,7 @@ class DataSet(object):
         :return:
         """
         num_batches_per_epoch = int(math.ceil(self.num_examples / batch_size))
+
         if num_batches is None:
             num_batches = num_batches_per_epoch
         num_epochs = int(math.ceil(num_batches / num_batches_per_epoch))
@@ -109,6 +112,7 @@ class DataSet(object):
             yield batch_idxs, batch_ds
 
     def get_multi_batches(self, batch_size, num_batches_per_step, num_steps=None, shuffle=False, cluster=False):
+        
         batch_size_per_step = batch_size * num_batches_per_step
         batches = self.get_batches(batch_size_per_step, num_batches=num_steps, shuffle=shuffle, cluster=cluster)
         multi_batches = (tuple(zip(grouper(idxs, batch_size, shorten=True, num_groups=num_batches_per_step),
@@ -160,10 +164,12 @@ def read_data(config, data_type, ref, data_filter=None):
         data = json.load(fh)
     with open(shared_path, 'r') as fh:
         shared = json.load(fh)
-    
-    
+        
     print(len(shared['lower_word_counter']))
+
     num_examples = len(next(iter(data.values())))
+   # print("num_examples: %s" % str(num_examples))
+
     if data_filter is None:
         valid_idxs = range(num_examples)
     else:
@@ -224,10 +230,11 @@ def read_data(config, data_type, ref, data_filter=None):
         word2vec_dict = shared['lower_word2vec'] if config.lower_word else shared['word2vec']
         new_word2idx_dict = shared['new_word2idx']
         idx2vec_dict = {idx: word2vec_dict[word] for word, idx in new_word2idx_dict.items()}
-        print("{}/{} unique words have corresponding glove vectors.".format(len(idx2vec_dict), len(word2idx_dict)))
+        #print("{}/{} unique words have corresponding glove vectors.".format(len(idx2vec_dict), len(word2idx_dict)))
         new_emb_mat = np.array([idx2vec_dict[idx] for idx in range(len(idx2vec_dict))], dtype='float32')
         shared['new_emb_mat'] = new_emb_mat
-
+        #print(new_emb_mat.shape)
+        #print(len(shared['new_word2idx']))
     data_set = DataSet(data, data_type, shared=shared, valid_idxs=valid_idxs)
     return data_set
 
@@ -294,11 +301,12 @@ def update_config(config, data_sets):
     for data_set in data_sets:
         data = data_set.data
         shared = data_set.shared
+
         for idx in data_set.valid_idxs:
             rx = data['*x'][idx]
             q = data['q'][idx]
             sents = shared['x'][rx[0]][rx[1]]
-
+            
             # sent length is set to 1 in the data processing
             # check later if results are weird !!!
             config.max_para_size = max(config.max_para_size, sum(map(len, sents)))
@@ -309,20 +317,20 @@ def update_config(config, data_sets):
                 config.max_ques_size = max(config.max_ques_size, len(q))
                 config.max_word_size = max(config.max_word_size, max(len(word) for word in q))
 
+    print(config.max_num_sents, config.max_sent_size, config.max_ques_size, config.max_word_size, config.max_para_size)
+
     if config.mode == 'train':
         config.max_num_sents = min(config.max_num_sents, config.num_sents_th)
         config.max_sent_size = min(config.max_sent_size, config.sent_size_th)
         config.max_para_size = min(config.max_para_size, config.para_size_th)
 
-    config.max_word_size = min(config.max_word_size, config.word_size_th)
+    print(config.max_num_sents, config.max_sent_size, config.max_ques_size, config.max_word_size, config.max_para_size)
 
+    config.max_word_size = min(config.max_word_size, config.word_size_th)
     config.char_vocab_size = len(data_sets[0].shared['char2idx'])
     config.word_emb_size = len(next(iter(data_sets[0].shared['word2vec'].values())))
+    config.word_vocab_size = len(data_sets[0].shared['word2idx'])
     
-    if config.use_glove_for_unk:
-        config.word_vocab_size = len(data_sets[0].shared['new_word2idx'])
-    else:
-        config.word_vocab_size = len(data_sets[0].shared['word2idx'])
     if config.single:
         config.max_num_sents = 1
     if config.squash:
