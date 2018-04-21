@@ -1,56 +1,36 @@
 from args import parse_args
 import numpy as np
 import random
+import itertools
 
 ALL_LANG = ['ar', 'en', 'es', 'fr', 'ru', 'zh']
-LANG_PAIR_LIST = [['en', 'zh'], ['zh', 'en']]
 
 def main():
 
     args = parse_args()
-
-
-    # load vocabulary
-    word2idx = {}
-    idx2word = {}
-
-    idx = 0
-    with open(args.source+args.vocab) as vocab:
-        for v in vocab:
-            v = v.strip().split('\t')[0]
-            word2idx[v] = idx
-            idx2word[idx] = v
-            idx += 1
-    vocab.close()
-
-    # append dictionary with <2target> symbols
-    for l in ALL_LANG:
-        tar = '<2%s>'%l
-        word2idx[tar] = idx
-        idx2word[idx] = tar
-        idx += 1
-
-    np.save(args.source+'w2i.npy', word2idx)
-    np.save(args.source+'i2w.npy', idx2word)
-
-    fout_list = [open(args.source + x + '.txt', 'w') for x in args.fout_list]
+        
+    # segment files to overcome memory limit
+    fout_list = [open(args.saveto + x + '.txt', 'w') for x in args.fout_list]
+    
+    pairs = [['en', 'ar'], ['en', 'es'], ['en', 'fr'], ['en', 'ru'], ['en', 'zh'], ['ar', 'en'], ['es', 'en'], ['fr', 'en'], ['ru', 'en'], ['zh', 'en']]
     
     save_data = []
-
     idx = 0
-    for pair in LANG_PAIR_LIST:
 
-        with open(args.source+pair[0]+'.txt', 'r') as source:
+    for pair in pairs:
+
+        with open('%sUNv1.0.6way.%s' % (args.source, pair[0]), 'r') as source:
             for line in source:
-                temp = str(word2idx['<2%s>' % pair[1]])
+                temp = '<2%s>' % pair[1]
                 temp = temp + ' ' + line.strip()
                 save_data.append([temp])
         source.close()
         print("Done collecting source %s" % pair[0])
 
-        with open(args.source+pair[1]+'.txt', 'r') as target:
+        with open('%sUNv1.0.6way.%s' % (args.source, pair[1]), 'r') as target:
             for line in target:
                 line = line.strip()
+                line = '<\t>' + line
                 save_data[idx].append(line)
                 idx += 1
         target.close()
@@ -66,12 +46,46 @@ def main():
     # close files to avoid conflicts
     for fout in fout_list:
         fout.close()
-
+  
+    # shuffle data
     for fout in args.fout_list:
-        lines = open(args.source+fout+'.txt').readlines()
+        lines = open(args.saveto+fout+'.txt').readlines()
         random.shuffle(lines)
-        open(args.source+fout+'_s.txt', 'w').writelines(lines)
+        open(args.saveto+fout+'_s.txt', 'w').writelines(lines)
         print("Done shuffling %s" % fout)
-         
+    
+    
+    # creat train data -- simply split file1 into target / source 
+    source_trn = open("/scratch/rjh347/input/source_trn.txt", "w")
+    target_trn = open("/scratch/rjh347/input/target_trn.txt", "w")
+
+    with open(args.saveto + 'files1_s.txt', 'r') as train:
+        for line in train:
+            line = line.split('<\t>')
+            assert len(line) == 2
+            source_trn.write(line[0])
+            source_trn.write('\n')
+            target_trn.write(line[1])
+    train.close()
+    source_trn.close()
+    target_trn.close()
+
+    
+    source_val = open("/scratch/rjh347/input/source_val.txt", "w")
+    target_val = open("/scratch/rjh347/input/target_val.txt", "w")
+
+    # creat evaluation data -- split file2 into target / source, save with 0.2 chance          
+    with open(args.saveto + 'files2_s.txt', 'r') as val:
+        for line in val:
+            line = line.split('<\t>')
+            thresh = random.randint(0, 4)
+            if thresh > 3:
+                assert len(line) == 2
+                source_val.write(line[0])
+                source_val.write('\n')
+                target_val.write(line[1])
+    val.close()
+    source_val.close()
+    target_val.close()
 if __name__ == '__main__':
     main()
