@@ -2,3 +2,8 @@
 2. save data into the correct directory and modify input path in args.py
 3. run_process_data.s
 4. run.s to train model
+<<<<<<< HEAD
+5. run_retrain.s
+=======
+5. run_retrain.s
+>>>>>>> 2201920bf489d509fdc945abba5c3467cb0a223f
